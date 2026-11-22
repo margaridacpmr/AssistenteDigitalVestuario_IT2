@@ -1,0 +1,10 @@
+# Dados pessoais e de login: nunca colocar no GitHub
+dados/*.dat
+dados/*.bak
+# Compilação
+out/
+target/
+*.class
+# IDE
+.idea/
+*.iml
