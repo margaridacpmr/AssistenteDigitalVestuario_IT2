@@ -16,12 +16,12 @@ public class CombinacaoPossivel implements Serializable {
 
     public CombinacaoPossivel(int id, String designacao, List<TipoRoupa> tipos) {
         if (designacao == null || designacao.isBlank() || tipos == null || tipos.size() < 2) {
-            throw new IllegalArgumentException("A combinação precisa de nome e pelo menos dois tipos.");
+            throw new IllegalArgumentException("nomeMinimoDoisTipos");
         }
         for (int i = 0; i < tipos.size(); i++) {
             for (int j = i + 1; j < tipos.size(); j++) {
                 if (Objects.equals(tipos.get(i), tipos.get(j))) {
-                    throw new IllegalArgumentException("Uma combinação não pode repetir tipos.");
+                    throw new IllegalArgumentException("tipoRepetido");
                 }
             }
         }

@@ -6,6 +6,10 @@ import org.interfaceutilizador.Textos;
 import org.persistencia.FicheiroDados;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 
@@ -45,13 +49,25 @@ public class TestesSimples {
         verificar(procurar(dados.getEstacoes(), "Inverno") != null, "inverno já disponível");
         verificar(procurar(dados.getTiposRoupa(), "Calças") != null, "calças já disponíveis");
         AssistenteDigital app = new AssistenteDigital(dados);
-        Utilizador admin = app.getAutenticacao().registar("Admin", "admin@teste.pt", "senha1", true);
-        Utilizador ana = app.getAutenticacao().registar("Ana", "ana@teste.pt", "abc123", false);
-        Utilizador bruno = app.getAutenticacao().registar("Bruno", "bruno@teste.pt", "xyz123", false);
+        Administrador admin = app.getAutenticacao().registarAdministrador("Admin", "admin@teste.pt", "senha1");
+        Utilizador ana = app.getAutenticacao().registar("Ana", "ana@teste.pt", "abc123");
+        Utilizador bruno = app.getAutenticacao().registar("Bruno", "bruno@teste.pt", "xyz123");
         verificar(app.getAutenticacao().entrar("ana@teste.pt", "abc123") == ana, "login correto");
         verificar(app.getAutenticacao().entrar("ana@teste.pt", "errada") == null, "login incorreto");
-        esperarErro(() -> app.getAutenticacao().registar("A", "ana@teste.pt", "q", false), "email único");
-        esperarErro(() -> app.getAdministracao().adicionarCatalogo(ana, "cor", Arrays.asList("Azul")), "só admin altera catálogos");
+        esperarErro(() -> app.getAutenticacao().registar("A", "ana@teste.pt", "q"), "email único");
+        verificar(app.getAutenticacao().entrar("admin@teste.pt", "senha1") == admin, "login de administrador");
+        verificar(!Utilizador.class.isAssignableFrom(Administrador.class)
+                        && !dados.getUtilizadores().contains(admin),
+                "administrador independente");
+        for (var metodo : Administrador.class.getMethods()) {
+            verificar(!metodo.getName().equals("getGuardaRoupa") && !metodo.getName().equals("adicionarPedido"),
+                    "administrador sem operações pessoais");
+        }
+        verificar(GuardaRoupaController.class.getMethod("adicionar", Utilizador.class, String.class,
+                TipoRoupa.class, List.class, List.class, List.class).getParameterTypes()[0] == Utilizador.class,
+                "adição de peças exige utilizador");
+        esperarErro(() -> app.getAutenticacao().registar("A", "admin@teste.pt", "q"), "email único entre tipos de conta");
+        esperarErro(() -> app.getAdministracao().adicionarCatalogo(null, "cor", Arrays.asList("Azul")), "só admin altera catálogos");
 
         // O administrador pode acrescentar valores, mas não repetir os predefinidos.
         app.getAdministracao().adicionarCatalogo(admin, "tipo", Arrays.asList("Sapatos"));
@@ -91,8 +107,11 @@ public class TestesSimples {
                 Arrays.asList(azul), Arrays.asList(inverno), Arrays.asList(trabalho)), "peça com nome único");
         verificar(app.getOutfits().solicitar(ana, trabalho, inverno) == null, "sem camisola não gera outfit");
         verificar(ana.getPedidos().isEmpty(), "falha não cria pedido");
-        app.getGuardaRoupa().adicionar(bruno, "Camisola do Bruno", camisola,
+        PecaVestuario pecaBruno = app.getGuardaRoupa().adicionar(bruno, "Camisola do Bruno", camisola,
                 List.of(branco), List.of(inverno), List.of(trabalho));
+        verificar(!ana.getGuardaRoupa().getPecas().contains(pecaBruno), "guarda-roupas independentes");
+        esperarErro(() -> app.getGuardaRoupa().editar(ana, pecaBruno, "Alterada", camisola,
+                List.of(branco), List.of(inverno), List.of(trabalho)), "não edita peças de outro utilizador");
         verificar(outfits.solicitar(ana, trabalho, inverno) == null, "uma peça de outro utilizador não completa o outfit");
         verificar(outfits.motivoFalha(ana, trabalho, inverno).equals("semTiposOutfit"), "diagnóstico dos tipos");
         // Primeiro, há tipos suficientes, mas a camisola é de outra ocasião.
@@ -118,7 +137,11 @@ public class TestesSimples {
         verificar(pedido != null, "com duas peças pode gerar outfit");
         verificar(pedido.getOutfit().getPecas().size() == 2, "outfit com dois tipos");
         verificar(pedido.getOutfit().getCombinacao() == regraAdmin, "outfit usa a regra do administrador");
-        esperarErro(() -> outfits.solicitar(admin, trabalho, inverno), "administrador não solicita outfits");
+        verificar(OutfitController.class.getMethod("solicitar", Utilizador.class, Ocasiao.class, Estacao.class)
+                        .getParameterTypes()[0] == Utilizador.class
+                        && OutfitController.class.getMethod("avaliar", Utilizador.class, PedidoOutfit.class, int.class)
+                        .getParameterTypes()[0] == Utilizador.class,
+                "solicitação e avaliação exigem utilizador");
         verificar(!app.getOutfits().consultarHistorico(ana).isEmpty(), "histórico do próprio");
         verificar(app.getOutfits().consultarHistorico(bruno).isEmpty(), "outro utilizador não vê histórico");
         esperarErro(() -> app.getOutfits().avaliar(bruno, pedido, 4), "outro utilizador não avalia");
@@ -137,15 +160,14 @@ public class TestesSimples {
         verificar(ana.getGuardaRoupa().getPecas().size() == 1, "remoção de peça");
         verificar(pedido.getOutfit().getPecas().size() == 2, "histórico preserva outfit anterior");
 
-        File temporario = File.createTempFile("vestuario-testes-", ".dat");
-        temporario.deleteOnExit();
+        File temporario = novoCaminhoDados();
         FicheiroDados ficheiro = new FicheiroDados(temporario.getAbsolutePath());
         CombinacaoPossivel outraRegra = app.getAdministracao().definirCombinacao(admin, "Com sapatos",
                 List.of(calcas, procurar(dados.getTiposRoupa(), "Sapatos")));
         ficheiro.guardar(dados);
         DadosAplicacao carregados = ficheiro.carregar();
         AssistenteDigital recarregada = new AssistenteDigital(carregados);
-        Utilizador anaRecarregada = recarregada.getAutenticacao().entrar("ana@teste.pt", "abc123");
+        Utilizador anaRecarregada = (Utilizador) recarregada.getAutenticacao().entrar("ana@teste.pt", "abc123");
         verificar(anaRecarregada != null, "login após carregar ficheiro");
         verificar(anaRecarregada.getPedidos().size() == 2, "histórico sobrevive ao reinício");
         verificar(carregados.getCores().size() == 8, "cores predefinidas e novas ficam guardadas");
@@ -163,16 +185,17 @@ public class TestesSimples {
         verificar(ficheiro.carregar().getCombinacoes().size() == 3, "reiniciar não duplica combinações");
 
         // Um ficheiro ainda inexistente passa a incluir os catálogos iniciais ao carregar.
-        File novoFicheiro = File.createTempFile("vestuario-novo-", ".dat");
-        novoFicheiro.delete();
-        novoFicheiro.deleteOnExit();
+        File novoFicheiro = novoCaminhoDados();
         FicheiroDados ficheiroNovo = new FicheiroDados(novoFicheiro.getAbsolutePath());
         DadosAplicacao dadosNovos = ficheiroNovo.carregar();
-        verificar(novoFicheiro.exists(), "cria ficheiro inicial automaticamente");
+        verificar(Files.exists(Path.of(novoFicheiro + ".enc")), "cria ficheiro cifrado inicial automaticamente");
         verificar(dadosNovos.getCores().size() == 7, "novo ficheiro com sete cores");
         verificar(dadosNovos.getTiposRoupa().size() == 5, "novo ficheiro com cinco tipos");
         verificarPredefinidas(ficheiroNovo, dadosNovos);
         verificarCombinacoesCores();
+        verificarCorRepetida(dadosNovos);
+        verificarDicionario(dados);
+        verificarCifragem(ficheiro, temporario, dados);
         for (String idioma : List.of("pt", "en", "fr")) {
             Textos textos = new Textos(idioma);
             for (String chave : List.of("semRegrasOutfit", "semTiposOutfit", "semDisponibilidadeOutfit",
@@ -203,7 +226,7 @@ public class TestesSimples {
         Estacao outono = procurar(dados.getEstacoes(), "Outono");
         Estacao verao = procurar(dados.getEstacoes(), "Verão");
         AssistenteDigital app = new AssistenteDigital(dados);
-        Utilizador utilizador = app.getAutenticacao().registar("Lia", "lia@teste.pt", "senha1", false);
+        Utilizador utilizador = app.getAutenticacao().registar("Lia", "lia@teste.pt", "senha1");
         // Instâncias distintas com o mesmo ID também têm de corresponder após o carregamento.
         PecaVestuario p1 = app.getGuardaRoupa().adicionar(utilizador, "Calças",
                 new TipoRoupa(calcas.getId(), calcas.getDesignacao()), List.of(preto),
@@ -226,7 +249,7 @@ public class TestesSimples {
         DadosAplicacao carregados = ficheiro.carregar();
         verificar(carregados.getCombinacoes().size() == 2, "as duas predefinidas persistem sem duplicados");
         AssistenteDigital recarregada = new AssistenteDigital(carregados);
-        Utilizador lia = recarregada.getAutenticacao().entrar("lia@teste.pt", "senha1");
+        Utilizador lia = (Utilizador) recarregada.getAutenticacao().entrar("lia@teste.pt", "senha1");
         PedidoOutfit recarregado = recarregada.getOutfits().solicitar(lia, aulas, inverno);
         verificar(recarregado != null && recarregado.getOutfit().getPecas().equals(lia.getGuardaRoupa().getPecas()),
                 "gera outfit depois de Serializable com instâncias distintas e listas diferentes");
@@ -246,8 +269,8 @@ public class TestesSimples {
         }
 
         AssistenteDigital app = new AssistenteDigital(dados);
-        Utilizador admin = app.getAutenticacao().registar("Admin", "admin@teste.pt", "senha1", true);
-        Utilizador utilizador = app.getAutenticacao().registar("Lia", "lia@teste.pt", "senha1", false);
+        Administrador admin = app.getAutenticacao().registarAdministrador("Admin", "admin@teste.pt", "senha1");
+        Utilizador utilizador = app.getAutenticacao().registar("Lia", "lia@teste.pt", "senha1");
         AdministracaoController administracao = app.getAdministracao();
         Cor preto = procurar(dados.getCores(), "Preto");
         Cor branco = procurar(dados.getCores(), "Branco");
@@ -268,7 +291,7 @@ public class TestesSimples {
                 "uma cor não basta");
         esperarErro(() -> administracao.definirCombinacaoCores(admin, "Fora", List.of(preto, new Cor(-1, "Fora"))),
                 "não aceita cores de fora do catálogo");
-        esperarErro(() -> administracao.definirCombinacaoCores(utilizador, "Outra", List.of(azul, verde)),
+        esperarErro(() -> administracao.definirCombinacaoCores(null, "Outra", List.of(azul, verde)),
                 "só o administrador define paletas");
         verificar(!dados.garantirCombinacoesCoresPredefinidas(), "predefinidas idempotentes com paleta personalizada");
 
@@ -325,16 +348,109 @@ public class TestesSimples {
         verificar(app.getOutfits().solicitar(utilizador, aulas, inverno) == null,
                 "quatro peças de uma só cor são rejeitadas mesmo com paleta aprovada");
 
-        File temporario = File.createTempFile("vestuario-uc16-", ".dat");
-        temporario.deleteOnExit();
+        File temporario = novoCaminhoDados();
         FicheiroDados ficheiro = new FicheiroDados(temporario.getAbsolutePath());
         ficheiro.guardar(dados);
         DadosAplicacao carregados = ficheiro.carregar();
         verificar(carregados.getCombinacoesCores().size() == 8 && ficheiro.carregar().getCombinacoesCores().size() == 8,
                 "paletas persistem sem duplicar ao carregar");
         verificar(carregados.getCombinacoesCores().get(7).getId() == nova.getId(), "paleta do admin mantém o ID");
-        Utilizador lia = new AssistenteDigital(carregados).getAutenticacao().entrar("lia@teste.pt", "senha1");
+        Utilizador lia = (Utilizador) new AssistenteDigital(carregados).getAutenticacao().entrar("lia@teste.pt", "senha1");
         verificar(lia.getPedidos().get(64).getOutfit().getCombinacaoCores().temMesmasCores(List.of(preto, branco)),
                 "histórico mantém a paleta que foi aplicada");
+    }
+
+    private static File novoCaminhoDados() throws IOException {
+        Path pasta = Files.createTempDirectory("vestuario-testes-");
+        pasta.toFile().deleteOnExit();
+        File legado = pasta.resolve("vestuario.dat").toFile();
+        legado.deleteOnExit();
+        new File(legado + ".key").deleteOnExit();
+        new File(legado + ".enc").deleteOnExit();
+        return legado;
+    }
+
+    private static void verificarCorRepetida(DadosAplicacao dados) {
+        AssistenteDigital app = new AssistenteDigital(dados);
+        Administrador admin = app.getAutenticacao().registarAdministrador("Admin", "admin@teste.pt", "senha1");
+        Utilizador u = app.getAutenticacao().registar("Rui", "rui@teste.pt", "senha2");
+        TipoRoupa calcas = procurar(dados.getTiposRoupa(), "Calças");
+        TipoRoupa camisola = procurar(dados.getTiposRoupa(), "Camisola");
+        TipoRoupa casaco = procurar(dados.getTiposRoupa(), "Casaco");
+        List<TipoRoupa> tipos = List.of(calcas, camisola, casaco);
+        CombinacaoPossivel regra = app.getAdministracao().definirCombinacao(admin, "Três peças", tipos);
+        Ocasiao aulas = procurar(dados.getOcasioes(), "Aulas");
+        Estacao inverno = procurar(dados.getEstacoes(), "Inverno");
+        Cor preto = procurar(dados.getCores(), "Preto");
+        Cor branco = procurar(dados.getCores(), "Branco");
+        for (TipoRoupa tipo : tipos) {
+            Cor cor = tipo.equals(casaco) ? branco : preto;
+            app.getGuardaRoupa().adicionar(u, tipo.getDesignacao(), tipo, List.of(cor), List.of(inverno), List.of(aulas));
+        }
+        PedidoOutfit pedido = app.getOutfits().solicitar(u, aulas, inverno);
+        verificar(pedido != null && pedido.getOutfit().getCombinacao() == regra
+                && pedido.getOutfit().getPecas().size() == 3
+                && pedido.getOutfit().getCombinacaoCores().temMesmasCores(List.of(preto, branco)),
+                "duas peças pretas e uma branca respeitam a paleta");
+    }
+
+    private static void verificarDicionario(DadosAplicacao dados) {
+        Textos textos = new Textos("pt");
+        List<ElementoCatalogo> valores = List.of(procurar(dados.getCores(), "Preto"),
+                procurar(dados.getTiposRoupa(), "Calças"), procurar(dados.getOcasioes(), "Dia a dia"),
+                procurar(dados.getEstacoes(), "Verão"), procurar(dados.getCores(), "Turquesa"));
+        List<String> idiomas = List.of("pt", "en", "fr");
+        List<String> listas = List.of("[Preto, Calças, Dia a dia, Verão, Turquesa]",
+                "[Black, Trousers, Everyday, Summer, Turquesa]", "[Noir, Pantalon, Quotidien, Été, Turquesa]");
+        List<String> paletas = List.of("Preto + Branco [Preto, Branco]", "Black + White [Black, White]",
+                "Noir + Blanc [Noir, Blanc]");
+        for (int i = 0; i < idiomas.size(); i++) {
+            textos.mudarIdioma(idiomas.get(i));
+            verificar(textos.formatar(valores).equals(listas.get(i)), "catálogo e valor personalizado em " + idiomas.get(i));
+            verificar(textos.formatar(dados.getCombinacoesCores().get(0)).equals(paletas.get(i)),
+                    "paleta predefinida em " + idiomas.get(i));
+        }
+        verificar(textos.mensagemErro("designacaoExistente:Turquesa", "operacaoInvalida")
+                .equals("Ce nom existe déjà: Turquesa"), "mensagem dinâmica traduzida com nome original");
+    }
+
+    private static void verificarCifragem(FicheiroDados ficheiro, File caminho, DadosAplicacao dados) throws Exception {
+        Path cifrado = Path.of(caminho + ".enc");
+        Path chave = Path.of(caminho + ".key");
+        byte[] original = Files.readAllBytes(cifrado);
+        byte[] chaveOriginal = Files.readAllBytes(chave);
+        verificar(!caminho.exists() && original[0] == 'A' && original[1] == 'D' && original[2] == 'V',
+                "novos dados gravados no formato cifrado");
+        String conteudo = new String(original, StandardCharsets.ISO_8859_1);
+        verificar(!conteudo.contains("ana@teste.pt") && !conteudo.contains("abc123"),
+                "ficheiro cifrado sem dados pessoais legíveis");
+        Utilizador ana = dados.getUtilizadores().get(0);
+        verificar(!ana.getHashPalavraPasse().equals("abc123") && !ana.getSalPalavraPasse().isBlank(),
+                "palavra-passe guardada como hash com sal");
+        ficheiro.guardar(dados);
+        verificar(Arrays.equals(chaveOriginal, Files.readAllBytes(chave)), "a gravação reutiliza a chave");
+        verificar(!Arrays.equals(original, Files.readAllBytes(cifrado)), "cada gravação usa um nonce novo");
+
+        byte[] adulterado = original.clone();
+        adulterado[adulterado.length - 1] ^= 1;
+        Files.write(cifrado, adulterado);
+        verificarErroDados(ficheiro, "erroDecifrarDados");
+        verificar(Arrays.equals(adulterado, Files.readAllBytes(cifrado)), "não sobrescreve o ficheiro adulterado");
+
+        Files.write(cifrado, original);
+        Files.delete(chave);
+        verificarErroDados(ficheiro, "chaveDadosEmFalta");
+        verificar(Files.notExists(chave), "não substitui uma chave perdida");
+        Files.write(chave, chaveOriginal);
+        verificar(ficheiro.carregar().existeAdministrador(), "dados recuperáveis com a chave original");
+    }
+
+    private static void verificarErroDados(FicheiroDados ficheiro, String codigo) throws Exception {
+        try {
+            ficheiro.carregar();
+            verificar(false, codigo);
+        } catch (IOException e) {
+            verificar(codigo.equals(e.getMessage()), codigo);
+        }
     }
 }

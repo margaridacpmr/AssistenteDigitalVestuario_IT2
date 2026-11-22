@@ -24,7 +24,7 @@ public class Outfit implements Serializable {
     public Outfit(int id, List<PecaVestuario> pecas, CombinacaoPossivel combinacao,
                   CombinacaoCores combinacaoCores) {
         if (pecas == null || pecas.size() < 2 || combinacao == null) {
-            throw new IllegalArgumentException("Um outfit precisa de uma combinação válida.");
+            throw new IllegalArgumentException("outfitCombinacaoObrigatoria");
         }
         this.id = id;
         this.nome = "Outfit " + id;

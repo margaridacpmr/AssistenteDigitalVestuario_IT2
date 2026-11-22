@@ -12,7 +12,7 @@ public class Avaliacao implements Serializable {
     public Avaliacao(int valor) { atualizar(valor); }
     public void atualizar(int valor) {
         if (valor < 1 || valor > 5) {
-            throw new IllegalArgumentException("A avaliação deve ser entre 1 e 5.");
+            throw new IllegalArgumentException("avaliacaoInvalida");
         }
         this.valor = valor;
         this.data = LocalDateTime.now();

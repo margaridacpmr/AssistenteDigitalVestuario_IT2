@@ -11,7 +11,7 @@ public abstract class ElementoCatalogo implements Serializable {
 
     public ElementoCatalogo(int id, String designacao) {
         if (designacao == null || designacao.isBlank()) {
-            throw new IllegalArgumentException("A designação é obrigatória.");
+            throw new IllegalArgumentException("designacaoObrigatoria");
         }
         this.id = id;
         this.designacao = designacao.trim();

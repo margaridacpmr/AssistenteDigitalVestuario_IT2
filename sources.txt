@@ -8,10 +8,12 @@ src/main/java/org/controladores/Seguranca.java
 src/main/java/org/interfaceutilizador/Consola.java
 src/main/java/org/interfaceutilizador/InterfaceConsola.java
 src/main/java/org/interfaceutilizador/Textos.java
+src/main/java/org/modelo/Administrador.java
 src/main/java/org/modelo/AssistenteDigital.java
 src/main/java/org/modelo/Avaliacao.java
 src/main/java/org/modelo/CombinacaoCores.java
 src/main/java/org/modelo/CombinacaoPossivel.java
+src/main/java/org/modelo/Conta.java
 src/main/java/org/modelo/Cor.java
 src/main/java/org/modelo/DadosAplicacao.java
 src/main/java/org/modelo/ElementoCatalogo.java

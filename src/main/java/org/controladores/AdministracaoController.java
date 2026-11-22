@@ -1,7 +1,6 @@
 package org.controladores;
 
 import org.modelo.*;
-import java.util.ArrayList;
 import java.util.List;
 
 /** UC7, UC8, UC9, UC12, UC15 e UC16. */
@@ -10,17 +9,17 @@ public class AdministracaoController {
 
     public AdministracaoController(DadosAplicacao dados) { this.dados = dados; }
 
-    private void confirmarAdministrador(Utilizador u) {
-        if (u == null || !u.isAdministrador()) {
-            throw new IllegalArgumentException("Operação reservada ao administrador.");
+    private void confirmarAdministrador(Administrador admin) {
+        if (!dados.getAdministradores().contains(admin)) {
+            throw new IllegalArgumentException("operacaoAdmin");
         }
     }
 
     /** Valida toda a lista antes de guardar qualquer elemento. */
-    public void adicionarCatalogo(Utilizador admin, String tipo, List<String> designacoes) {
+    public void adicionarCatalogo(Administrador admin, String tipo, List<String> designacoes) {
         confirmarAdministrador(admin);
         if (designacoes == null || designacoes.isEmpty()) {
-            throw new IllegalArgumentException("A lista não pode estar vazia.");
+            throw new IllegalArgumentException("listaObrigatoria");
         }
         List<? extends ElementoCatalogo> existentes;
         switch (tipo) {
@@ -28,21 +27,21 @@ public class AdministracaoController {
             case "estacao": existentes = dados.getEstacoes(); break;
             case "ocasiao": existentes = dados.getOcasioes(); break;
             case "tipo": existentes = dados.getTiposRoupa(); break;
-            default: throw new IllegalArgumentException("Catálogo desconhecido.");
+            default: throw new IllegalArgumentException("catalogoDesconhecido");
         }
         for (int i = 0; i < designacoes.size(); i++) {
             String nome = designacoes.get(i);
             if (nome == null || nome.isBlank()) {
-                throw new IllegalArgumentException("Nenhuma designação pode estar vazia.");
+                throw new IllegalArgumentException("designacaoObrigatoria");
             }
             for (ElementoCatalogo existente : existentes) {
                 if (existente.getDesignacao().equalsIgnoreCase(nome.trim())) {
-                    throw new IllegalArgumentException("A designação já existe: " + nome);
+                    throw new IllegalArgumentException("designacaoExistente:" + nome);
                 }
             }
             for (int j = 0; j < i; j++) {
                 if (designacoes.get(j).trim().equalsIgnoreCase(nome.trim())) {
-                    throw new IllegalArgumentException("Designação repetida no lote: " + nome);
+                    throw new IllegalArgumentException("designacaoRepetida:" + nome);
                 }
             }
         }
@@ -59,23 +58,23 @@ public class AdministracaoController {
         }
     }
 
-    public CombinacaoPossivel definirCombinacao(Utilizador admin, String nome,
+    public CombinacaoPossivel definirCombinacao(Administrador admin, String nome,
                                                  List<TipoRoupa> tipos) {
         confirmarAdministrador(admin);
         if (nome == null || nome.isBlank() || tipos == null || tipos.size() < 2) {
-            throw new IllegalArgumentException("Indique o nome e pelo menos dois tipos distintos.");
+            throw new IllegalArgumentException("nomeMinimoDoisTipos");
         }
         for (CombinacaoPossivel c : dados.getCombinacoes()) {
             if (c.getDesignacao().equalsIgnoreCase(nome.trim())) {
-                throw new IllegalArgumentException("Já existe uma combinação com esse nome.");
+                throw new IllegalArgumentException("nomeCombinacaoDuplicado");
             }
             if (mesmosTipos(c.getTiposRoupa(), tipos)) {
-                throw new IllegalArgumentException("Já existe uma combinação com esses tipos.");
+                throw new IllegalArgumentException("combinacaoTiposDuplicada");
             }
         }
         for (TipoRoupa tipo : tipos) {
             if (tipo == null || !dados.getTiposRoupa().contains(tipo)) {
-                throw new IllegalArgumentException("Tipo de roupa inexistente.");
+                throw new IllegalArgumentException("tipoInexistente");
             }
         }
         // O construtor também valida tipos repetidos.
@@ -84,7 +83,7 @@ public class AdministracaoController {
         return combinacao;
     }
 
-    public CombinacaoCores definirCombinacaoCores(Utilizador admin, String nome, List<Cor> cores) {
+    public CombinacaoCores definirCombinacaoCores(Administrador admin, String nome, List<Cor> cores) {
         confirmarAdministrador(admin);
         return dados.adicionarCombinacaoCores(nome, cores);
     }

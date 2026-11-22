@@ -26,7 +26,7 @@ public class PecaVestuario implements Serializable {
                           List<Estacao> estacoes, List<Ocasiao> ocasioes) {
         if (nome == null || nome.isBlank() || tipo == null || cores == null || cores.isEmpty()
                 || estacoes == null || estacoes.isEmpty() || ocasioes == null || ocasioes.isEmpty()) {
-            throw new IllegalArgumentException("Nome, tipo, cores, estações e ocasiões são obrigatórios.");
+            throw new IllegalArgumentException("dadosPecaObrigatorios");
         }
         this.nome = nome.trim();
         this.tipoRoupa = tipo;

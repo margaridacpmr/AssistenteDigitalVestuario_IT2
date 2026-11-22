@@ -1,5 +1,7 @@
 package org.interfaceutilizador;
 
+import org.modelo.ElementoCatalogo;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
@@ -7,7 +9,7 @@ import java.util.Scanner;
 /** Leitura e validação de entradas do utilizador; 0 permite cancelar seleções. */
 public class Consola {
     private final Scanner scanner;
-    private Textos textos;
+    private final Textos textos;
 
     public Consola(Scanner scanner, Textos textos) {
         this.scanner = scanner;
@@ -15,8 +17,18 @@ public class Consola {
     }
     public String t(String chave) { return textos.get(chave); }
 
+    public String apresentar(Object valor) { return textos.formatar(valor); }
+
+    public String nomeCombinacao(String nome, List<? extends ElementoCatalogo> elementos) {
+        return textos.nomeCombinacao(nome, elementos);
+    }
+
+    public void mostrarErro(IllegalArgumentException erro) {
+        System.out.println(t("erro") + textos.mensagemErro(erro.getMessage(), "operacaoInvalida"));
+    }
+
     public void mudarIdioma(String idioma) {
-        textos = new Textos(idioma);
+        textos.mudarIdioma(idioma);
     }
 
     public String ler(String pergunta) {
@@ -51,7 +63,7 @@ public class Consola {
         }
         System.out.println("\n" + titulo);
         for (int i = 0; i < itens.size(); i++) {
-            System.out.println((i + 1) + " - " + itens.get(i));
+            System.out.println((i + 1) + " - " + apresentar(itens.get(i)));
         }
         int escolha = numero(t("selecionarNumero"), 0, itens.size());
         return escolha == 0 ? null : itens.get(escolha - 1);
@@ -64,7 +76,7 @@ public class Consola {
         while (true) {
             System.out.println("\n" + titulo);
             for (int i = 0; i < itens.size(); i++) {
-                System.out.println((i + 1) + " - " + itens.get(i));
+                System.out.println((i + 1) + " - " + apresentar(itens.get(i)));
             }
             String entrada = ler(t("variosNumeros"));
             if (entrada.equals("0")) { return new ArrayList<>(); }

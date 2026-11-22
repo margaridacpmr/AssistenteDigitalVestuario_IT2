@@ -1,5 +1,7 @@
 package org.modelo;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
@@ -8,6 +10,7 @@ import java.util.List;
 public class DadosAplicacao implements Serializable {
     private static final long serialVersionUID = 1L;
     private int proximoId = 1;
+    private ArrayList<Administrador> administradores = new ArrayList<>();
     private final ArrayList<Utilizador> utilizadores = new ArrayList<>();
     private final ArrayList<TipoRoupa> tiposRoupa = new ArrayList<>();
     private final ArrayList<Cor> cores = new ArrayList<>();
@@ -170,10 +173,19 @@ public class DadosAplicacao implements Serializable {
     public void adicionarOcasiao(Ocasiao o) { ocasioes.add(o); }
     public void adicionarCombinacao(CombinacaoPossivel c) { combinacoes.add(c); }
 
-    public boolean existeAdministrador() {
-        for (Utilizador u : utilizadores) {
-            if (u.isAdministrador()) { return true; }
+    public boolean existeAdministrador() { return !administradores.isEmpty(); }
+    public List<Administrador> getAdministradores() { return new ArrayList<>(administradores); }
+    public void adicionarAdministrador(Administrador admin) { administradores.add(admin); }
+
+    private void readObject(ObjectInputStream entrada) throws IOException, ClassNotFoundException {
+        entrada.defaultReadObject();
+        if (administradores == null) { administradores = new ArrayList<>(); }
+        for (int i = utilizadores.size() - 1; i >= 0; i--) {
+            Administrador admin = utilizadores.get(i).getAdministradorLegado();
+            if (admin != null) {
+                administradores.add(admin);
+                utilizadores.remove(i);
+            }
         }
-        return false;
     }
 }

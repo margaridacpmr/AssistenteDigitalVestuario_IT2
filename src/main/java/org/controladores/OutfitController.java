@@ -11,9 +11,9 @@ public class OutfitController {
     public OutfitController(DadosAplicacao dados) { this.dados = dados; }
 
     public PedidoOutfit solicitar(Utilizador utilizador, Ocasiao ocasiao, Estacao estacao) {
-        if (utilizador == null || utilizador.isAdministrador()
+        if (utilizador == null
                 || !dados.getOcasioes().contains(ocasiao) || !dados.getEstacoes().contains(estacao)) {
-            throw new IllegalArgumentException("Utilizador, ocasião ou estação inválidos.");
+            throw new IllegalArgumentException("pedidoInvalido");
         }
         GeradorOutfits.Selecao selecao = gerador.procurarOutfit(utilizador.getGuardaRoupa().getPecas(),
                 dados.getCombinacoes(), ocasiao, estacao, dados.getCombinacoesCores());
@@ -52,14 +52,14 @@ public class OutfitController {
 
     public void avaliar(Utilizador utilizador, PedidoOutfit pedido, int valor) {
         if (utilizador == null || pedido == null || !utilizador.getPedidos().contains(pedido)) {
-            throw new IllegalArgumentException("Só pode avaliar os seus outfits.");
+            throw new IllegalArgumentException("avaliacaoDeOutroUtilizador");
         }
         pedido.getOutfit().avaliar(valor);
     }
 
     public List<PedidoOutfit> consultarHistorico(Utilizador utilizador) {
-        if (utilizador == null || utilizador.isAdministrador()) {
-            throw new IllegalArgumentException("É necessário iniciar sessão como utilizador.");
+        if (utilizador == null) {
+            throw new IllegalArgumentException("sessaoUtilizadorObrigatoria");
         }
         return utilizador.getPedidos();
     }

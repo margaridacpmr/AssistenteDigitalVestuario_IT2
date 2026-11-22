@@ -17,9 +17,13 @@ public class InterfaceConsola {
     private final DateTimeFormatter formatoData = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     public InterfaceConsola(AssistenteDigital sistema, FicheiroDados ficheiro, Scanner scanner, String idioma) {
+        this(sistema, ficheiro, scanner, new Textos(idioma));
+    }
+
+    public InterfaceConsola(AssistenteDigital sistema, FicheiroDados ficheiro, Scanner scanner, Textos textos) {
         this.sistema = sistema;
         this.ficheiro = ficheiro;
-        this.consola = new Consola(scanner, new Textos(idioma));
+        this.consola = new Consola(scanner, textos);
     }
 
     public void executar() throws IOException {
@@ -41,14 +45,12 @@ public class InterfaceConsola {
             try {
                 if (escolha == 1) { registarUtilizador(false); }
                 else {
-                    Utilizador utilizador = iniciarSessao();
-                    if (utilizador != null) {
-                        if (utilizador.isAdministrador()) { menuAdministrador(utilizador); }
-                        else { menuUtilizador(utilizador); }
-                    }
+                    Conta conta = iniciarSessao();
+                    if (conta instanceof Administrador admin) { menuAdministrador(admin); }
+                    else if (conta instanceof Utilizador utilizador) { menuUtilizador(utilizador); }
                 }
             } catch (IllegalArgumentException e) {
-                System.out.println(consola.t("erro") + e.getMessage());
+                consola.mostrarErro(e);
             }
         }
     }
@@ -71,7 +73,7 @@ public class InterfaceConsola {
         System.out.println(consola.t("primeiroAdmin"));
         while (!sistema.getDados().existeAdministrador()) {
             try { registarUtilizador(true); }
-            catch (IllegalArgumentException e) { System.out.println(consola.t("erro") + e.getMessage()); }
+            catch (IllegalArgumentException e) { consola.mostrarErro(e); }
         }
     }
 
@@ -82,21 +84,22 @@ public class InterfaceConsola {
         // A palavra-passe não aparece no resumo da confirmação.
         System.out.println(consola.t("nome") + ": " + nome + " | " + consola.t("email") + ": " + email);
         if (!consola.confirmar()) { System.out.println(consola.t("cancelado")); return; }
-        sistema.getAutenticacao().registar(nome, email, palavraPasse, admin);
+        if (admin) { sistema.getAutenticacao().registarAdministrador(nome, email, palavraPasse); }
+        else { sistema.getAutenticacao().registar(nome, email, palavraPasse); }
         guardar();
         System.out.println(consola.t("registoOk"));
     }
 
-    private Utilizador iniciarSessao() {
+    private Conta iniciarSessao() {
         String email = consola.ler(consola.t("email"));
         String palavraPasse = consola.ler(consola.t("palavraPasse"));
-        Utilizador utilizador = sistema.getAutenticacao().entrar(email, palavraPasse);
-        if (utilizador == null) { System.out.println(consola.t("loginErro")); }
-        else { System.out.println(consola.t("ola") + " " + utilizador.getNome()); }
-        return utilizador;
+        Conta conta = sistema.getAutenticacao().entrar(email, palavraPasse);
+        if (conta == null) { System.out.println(consola.t("loginErro")); }
+        else { System.out.println(consola.t("ola") + " " + conta.getNome()); }
+        return conta;
     }
 
-    private void menuAdministrador(Utilizador admin) throws IOException {
+    private void menuAdministrador(Administrador admin) throws IOException {
         while (true) {
             System.out.println("\n== " + consola.t("menuAdmin") + " ==");
             System.out.println("1 - " + consola.t("cores"));
@@ -120,11 +123,11 @@ public class InterfaceConsola {
                     case 7: definirCombinacaoCores(admin); break;
                     default: break;
                 }
-            } catch (IllegalArgumentException e) { System.out.println(consola.t("erro") + e.getMessage()); }
+            } catch (IllegalArgumentException e) { consola.mostrarErro(e); }
         }
     }
 
-    private void definirCatalogo(Utilizador admin, String tipo, String titulo) throws IOException {
+    private void definirCatalogo(Administrador admin, String tipo, String titulo) throws IOException {
         List<? extends ElementoCatalogo> existentes;
         switch (tipo) {
             case "cor": existentes = sistema.getDados().getCores(); break;
@@ -132,7 +135,7 @@ public class InterfaceConsola {
             case "estacao": existentes = sistema.getDados().getEstacoes(); break;
             default: existentes = sistema.getDados().getTiposRoupa(); break;
         }
-        System.out.println("\n" + titulo + ": " + existentes);
+        System.out.println("\n" + titulo + ": " + consola.apresentar(existentes));
         ArrayList<String> novas = new ArrayList<>();
         System.out.println(consola.t("introduzirAteVazio"));
         while (true) {
@@ -148,36 +151,32 @@ public class InterfaceConsola {
         System.out.println(consola.t("sucesso"));
     }
 
-    private void definirCombinacao(Utilizador admin) throws IOException {
-        System.out.println("\n" + consola.t("combinacoes") + ": " + sistema.getDados().getCombinacoes());
+    private void definirCombinacao(Administrador admin) throws IOException {
+        System.out.println("\n" + consola.t("combinacoes") + ": "
+                + consola.apresentar(sistema.getDados().getCombinacoes()));
         List<TipoRoupa> tipos = sistema.getDados().getTiposRoupa();
         if (tipos.size() < 2) { System.out.println(consola.t("minimoDoisTipos")); return; }
         String nome = consola.ler(consola.t("designacao"));
         List<TipoRoupa> selecionados = consola.escolherVarios(consola.t("selecionarTipos"), tipos);
         if (selecionados.isEmpty()) { return; }
         if (selecionados.size() < 2) { System.out.println(consola.t("minimoDoisTipos")); return; }
-        System.out.println(nome + ": " + selecionados);
+        System.out.println(nome + ": " + consola.apresentar(selecionados));
         if (!consola.confirmar()) { System.out.println(consola.t("cancelado")); return; }
         sistema.getAdministracao().definirCombinacao(admin, nome, selecionados);
         guardar();
         System.out.println(consola.t("sucesso"));
     }
 
-    private void definirCombinacaoCores(Utilizador admin) throws IOException {
+    private void definirCombinacaoCores(Administrador admin) throws IOException {
         DadosAplicacao dados = sistema.getDados();
-        System.out.println("\n" + consola.t("combinacaoCores") + ": " + dados.getCombinacoesCores());
+        System.out.println("\n" + consola.t("combinacaoCores") + ": " + consola.apresentar(dados.getCombinacoesCores()));
         String nome = consola.ler(consola.t("designacao"));
         List<Cor> cores = consola.escolherVarios(consola.t("selecionarCoresCombinacao"), dados.getCores());
         if (cores.isEmpty()) { return; }
         if (cores.size() < 2) { System.out.println(consola.t("minimoDuasCores")); return; }
-        System.out.println(nome + ": " + cores);
+        System.out.println(nome + ": " + consola.apresentar(cores));
         if (!consola.confirmar()) { System.out.println(consola.t("cancelado")); return; }
-        try {
-            sistema.getAdministracao().definirCombinacaoCores(admin, nome, cores);
-        } catch (IllegalArgumentException e) {
-            System.out.println(consola.t("erro") + consola.t(e.getMessage()));
-            return;
-        }
+        sistema.getAdministracao().definirCombinacaoCores(admin, nome, cores);
         guardar();
         System.out.println(consola.t("sucesso"));
     }
@@ -210,7 +209,7 @@ public class InterfaceConsola {
                     case 9: selecionarIdioma(); break;
                     default: break;
                 }
-            } catch (IllegalArgumentException e) { System.out.println(consola.t("erro") + e.getMessage()); }
+            } catch (IllegalArgumentException e) { consola.mostrarErro(e); }
         }
     }
 
@@ -330,9 +329,10 @@ public class InterfaceConsola {
 
     private void mostrarDadosPeca(String nome, TipoRoupa tipo, List<Cor> cores,
                                   List<Estacao> estacoes, List<Ocasiao> ocasioes) {
-        System.out.println(consola.t("nome") + ": " + nome + " | " + consola.t("tipos") + ": " + tipo);
-        System.out.println(consola.t("cores") + ": " + cores + " | " + consola.t("estacoes") + ": " + estacoes);
-        System.out.println(consola.t("ocasioes") + ": " + ocasioes);
+        System.out.println(consola.t("nome") + ": " + nome + " | " + consola.t("tipos") + ": " + consola.apresentar(tipo));
+        System.out.println(consola.t("cores") + ": " + consola.apresentar(cores)
+                + " | " + consola.t("estacoes") + ": " + consola.apresentar(estacoes));
+        System.out.println(consola.t("ocasioes") + ": " + consola.apresentar(ocasioes));
     }
     private void mostrarPeca(PecaVestuario peca) {
         mostrarDadosPeca(peca.getNome(), peca.getTipoRoupa(), peca.getCores(), peca.getEstacoes(), peca.getOcasioes());
@@ -345,7 +345,8 @@ public class InterfaceConsola {
         if (ocasiao == null) { return; }
         Estacao estacao = consola.escolher(consola.t("estacoes"), sistema.getDados().getEstacoes());
         if (estacao == null) { return; }
-        System.out.println(consola.t("ocasioes") + ": " + ocasiao + " | " + consola.t("estacoes") + ": " + estacao);
+        System.out.println(consola.t("ocasioes") + ": " + consola.apresentar(ocasiao)
+                + " | " + consola.t("estacoes") + ": " + consola.apresentar(estacao));
         System.out.println(consola.t("regraMesmoContexto"));
         if (!consola.confirmar()) { System.out.println(consola.t("cancelado")); return; }
         PedidoOutfit pedido = sistema.getOutfits().solicitar(utilizador, ocasiao, estacao);
@@ -381,7 +382,7 @@ public class InterfaceConsola {
         for (int i = 0; i < pedidos.size(); i++) {
             PedidoOutfit pedido = pedidos.get(i);
             System.out.println((i + 1) + " - " + pedido.getData().format(formatoData)
-                    + " | " + pedido.getOcasiao() + " | " + pedido.getEstacao()
+                    + " | " + consola.apresentar(pedido.getOcasiao()) + " | " + consola.apresentar(pedido.getEstacao())
                     + " | " + textoAvaliacao(pedido.getOutfit()));
         }
         int escolha = consola.numero(consola.t("selecionarNumero"), 0, pedidos.size());
@@ -395,14 +396,16 @@ public class InterfaceConsola {
 
     private void mostrarPedido(PedidoOutfit pedido) {
         Outfit outfit = pedido.getOutfit();
-        System.out.println("\n" + outfit.getNome() + " | ID " + pedido.getId() + " | " + pedido.getData().format(formatoData));
-        System.out.println(consola.t("ocasioes") + ": " + pedido.getOcasiao()
-                + " | " + consola.t("estacoes") + ": " + pedido.getEstacao());
-        System.out.println(consola.t("regra") + ": " + outfit.getCombinacao().getDesignacao());
+        System.out.println("\n" + consola.t("nomeOutfit") + " " + outfit.getId()
+                + " | ID " + pedido.getId() + " | " + pedido.getData().format(formatoData));
+        System.out.println(consola.t("ocasioes") + ": " + consola.apresentar(pedido.getOcasiao())
+                + " | " + consola.t("estacoes") + ": " + consola.apresentar(pedido.getEstacao()));
+        System.out.println(consola.t("regra") + ": " + consola.nomeCombinacao(
+                outfit.getCombinacao().getDesignacao(), outfit.getCombinacao().getTiposRoupa()));
         CombinacaoCores paleta = outfit.getCombinacaoCores();
         System.out.println(consola.t("combinacaoCores") + ": "
-                + (paleta == null ? consola.t("combinacaoCoresNaoRegistada") : paleta));
-        System.out.println(consola.t("pecas") + ": " + outfit.getPecas());
+                + (paleta == null ? consola.t("combinacaoCoresNaoRegistada") : consola.apresentar(paleta)));
+        System.out.println(consola.t("pecas") + ": " + consola.apresentar(outfit.getPecas()));
         System.out.println(consola.t("avaliacao") + ": " + textoAvaliacao(outfit));
         if (outfit.getAvaliacao() != null) {
             System.out.println(consola.t("dataAvaliacao") + ": " + outfit.getAvaliacao().getData().format(formatoData));

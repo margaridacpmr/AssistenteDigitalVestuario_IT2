@@ -1,63 +1,114 @@
 package org.persistencia;
 
+import org.controladores.Seguranca;
 import org.modelo.DadosAplicacao;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.GeneralSecurityException;
 
-/** Usa Serializable: é um ficheiro de objetos Java, NÃO uma base de dados SQL. */
+/** Guarda objetos Serializable num ficheiro cifrado e mantém a origem legada intacta. */
 public class FicheiroDados {
-    private final File ficheiro;
+    private final Path legado;
+    private final Path cifrado;
+    private final Path chave;
 
-    public FicheiroDados(String caminho) { this.ficheiro = new File(caminho); }
+    public FicheiroDados(String caminho) {
+        legado = Path.of(caminho).toAbsolutePath();
+        cifrado = legado.resolveSibling(legado.getFileName() + ".enc");
+        chave = legado.resolveSibling(legado.getFileName() + ".key");
+    }
 
     public DadosAplicacao carregar() throws IOException, ClassNotFoundException {
-        if (!ficheiro.exists()) {
-            DadosAplicacao dados = new DadosAplicacao();
-            dados.garantirCombinacoesPredefinidas();
-            guardar(dados);
-            return dados;
-        }
+        boolean temCifrado = !Files.notExists(cifrado);
         DadosAplicacao dados;
-        try (ObjectInputStream entrada = new ObjectInputStream(new FileInputStream(ficheiro))) {
-            dados = (DadosAplicacao) entrada.readObject();
+        if (temCifrado) {
+            dados = desserializar(new ByteArrayInputStream(lerDadosCifrados()));
+        } else if (!Files.notExists(legado)) {
+            dados = desserializar(Files.newInputStream(legado));
+        } else {
+            dados = new DadosAplicacao();
         }
-        // Mantém utilizadores e peças existentes; só acrescenta valores em falta.
         boolean catalogosAlterados = dados.garantirCatalogosPredefinidos();
         boolean combinacoesAlteradas = dados.garantirCombinacoesPredefinidas();
         boolean combinacoesCoresAlteradas = dados.garantirCombinacoesCoresPredefinidas();
-        if (catalogosAlterados || combinacoesAlteradas || combinacoesCoresAlteradas) {
+        if (!temCifrado || catalogosAlterados || combinacoesAlteradas || combinacoesCoresAlteradas) {
             guardar(dados);
         }
         return dados;
     }
 
     public void guardar(DadosAplicacao dados) throws IOException {
-        File pasta = ficheiro.getParentFile();
-        if (pasta != null && !pasta.exists() && !pasta.mkdirs()) {
-            throw new IOException("Não foi possível criar a pasta de dados.");
+        Files.createDirectories(cifrado.getParent());
+        byte[] chaveDados = obterChaveParaGravar();
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (ObjectOutputStream saida = new ObjectOutputStream(bytes)) {
+            saida.writeObject(dados);
         }
-        Path destino = ficheiro.toPath().toAbsolutePath();
-        Path temporario = Files.createTempFile(destino.getParent(), "vestuario-", ".tmp");
+
+        byte[] protegidos;
         try {
-            // Conserva o ficheiro anterior se a serialização for interrompida.
-            try (ObjectOutputStream saida = new ObjectOutputStream(new FileOutputStream(temporario.toFile()))) {
-                saida.writeObject(dados);
-            }
+            protegidos = Seguranca.cifrarDados(bytes.toByteArray(), chaveDados);
+        } catch (GeneralSecurityException e) {
+            throw new IOException("erroCifrarDados", e);
+        }
+        Path temporario = Files.createTempFile(cifrado.getParent(), "vestuario-", ".tmp");
+        try {
+            Files.write(temporario, protegidos);
             try {
-                Files.move(temporario, destino, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                Files.move(temporario, cifrado, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             } catch (AtomicMoveNotSupportedException e) {
-                Files.move(temporario, destino, StandardCopyOption.REPLACE_EXISTING);
+                Files.move(temporario, cifrado, StandardCopyOption.REPLACE_EXISTING);
             }
         } finally {
             Files.deleteIfExists(temporario);
         }
+    }
+
+    private DadosAplicacao desserializar(InputStream fluxo) throws IOException, ClassNotFoundException {
+        try (InputStream origem = fluxo; ObjectInputStream entrada = new ObjectInputStream(origem)) {
+            entrada.setObjectInputFilter(ObjectInputFilter.Config.createFilter(
+                    "org.modelo.*;java.base/java.lang.*;java.base/java.util.*;java.base/java.time.*;!*"));
+            if (entrada.readObject() instanceof DadosAplicacao dados) { return dados; }
+            throw new IOException("formatoDadosInvalido");
+        }
+    }
+
+    private byte[] lerDadosCifrados() throws IOException {
+        if (Files.notExists(chave)) { throw new IOException("chaveDadosEmFalta"); }
+        try {
+            return Seguranca.decifrarDados(Files.readAllBytes(cifrado), Files.readAllBytes(chave));
+        } catch (GeneralSecurityException e) {
+            throw new IOException("erroDecifrarDados", e);
+        }
+    }
+
+    private byte[] obterChaveParaGravar() throws IOException {
+        if (Files.notExists(chave)) {
+            if (!Files.notExists(cifrado)) { throw new IOException("chaveDadosEmFalta"); }
+            // O temporário tem permissões restritas no sistema de ficheiros.
+            Path temporario = Files.createTempFile(chave.getParent(), "vestuario-chave-", ".tmp");
+            try {
+                Files.write(temporario, Seguranca.criarChaveDados());
+                try {
+                    Files.move(temporario, chave);
+                } catch (FileAlreadyExistsException e) {
+                    // Outra instância já criou a chave.
+                }
+            } finally {
+                Files.deleteIfExists(temporario);
+            }
+        }
+        return Files.readAllBytes(chave);
     }
 }

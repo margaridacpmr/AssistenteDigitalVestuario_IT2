@@ -8,3 +8,8 @@ target/
 # IDE
 .idea/
 *.iml
+
+# Dados cifrados e chave local
+dados/*.enc
+dados/*.key
+dados/*.tmp
